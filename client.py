@@ -3,10 +3,27 @@ import socket
 import yaml
 import json
 from datetime import datetime
+import zlib
+
+
+WRITE_MODE = 'write'
+READ_MODE = 'read'
+
+def make_request(sock, action, data):
+	request = {
+		'action': action,
+		'time': datetime.now().timestamp(),
+		'data': data,
+	}
 
 parser =ArgumentParser()
 
 parser.add_argument('-c', '--config', type = str, required = False, help = 'Config file path')
+
+parser.add_argument(
+		'-n', '--mode', type = str, default = WRITE_MODE,
+		help = 'Set client mode'
+	)
 
 args = parser.parse_args()
 
@@ -27,21 +44,26 @@ try:
 	sock = socket.socket()
 	sock.connect((host, port))
 
-	action = input('Enter action needed: ')
-	data = input('Enter request: ')
-	request = {
-		'action': action,
-		'time': datetime.now().timestamp(),
-		'data': data,
-	}
+	while True:
+		if args.mode == WRITE_MODE:
+			action = input('Enter action needed: ')
+			data = input('Enter request: ')
 
-	str_request = json.dumps(request)
+			request = make_request(action, data)
+			str_request = json.dumps(request)
 
-	sock.send(str_request.encode())
-	print('Request sent: ', request)
+			bytes_request = zlib.compress(str_request.encode())
 
-	b_response = sock.recv(config.get('buffersize'))
+			sock.send(bytes_request)
 
-	print('Response received', b_response)
+
+			print('Request sent: ', request)
+		elif args.mode == READ_MODE:
+			response = sock.recv(config.get('buffersize'))
+			bytes_response = zlib.decompress(response)
+
+			print('Response received', bytes_response)
+
+			
 except KeyboardInterrupt:
 	print('Client shutdown')

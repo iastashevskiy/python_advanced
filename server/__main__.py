@@ -5,6 +5,8 @@ import json
 from protocol import validate_req, response
 from actions import resolve
 import logging
+from handlers import handle_default_request
+import select
 
 
 
@@ -41,8 +43,8 @@ if args.config:
 # logger.setlevel(logging.DEBUG)
 
 logging.basicConfig(
-	level = logging.DEBUG
-	format = '%(asctime)s - %(levelname)s - %(message)s'
+	level = logging.DEBUG,
+	format='%(asctime)s - %(levelname)s - %(message)s',
 	handlers = [
 		logging.FileHandler('main.log'),
 		logging.StreamHandler()
@@ -50,45 +52,41 @@ logging.basicConfig(
 
 )
 
+requests = []
+connections = []
 
 host, port = config.get('host'),config.get('port')
 
 try:
 	sock = socket.socket()
 	sock.bind((host, port))
+	sock.setblocking(False)
+	sock.settimeout(0)
 	sock.listen(5)
 	logging.info(f'Server started with {host}: {port}')
 
 	while True:
-		client, address = sock.accept()
-		logging.info(f'Client{address[0]}:{address[1]}')
+		try:
+			client, address = sock.accept()
+			logging.info(f'Client {address[0]}:{address[1]}')
+			connections.append(client)
+		except:
+			pass
 
-		b_request = client.recv(config.get('buffersize'))
+		rlist, wlist, xlist = select.select(
+			connections, connections, connections, 0
+			)
 
-		request = json.loads(b_request.decode())
+		for read_client in rlist:
+			bytes_request = read_client.recv(config.get('buffersize'))
+			requests.append(bytes_request)
 
-		if validate_req(request):
 
-			action_name = request.get('action')
-			controller = resolve(action_name)
-			
-			if controller:	
-				try:
-					logging.info('Request valid', request)
-					response = controller(request)
-				except Exception as error:
-					logging.critical('Internal error', error)
-					response = request(request, 500, 'Internal error')
-			else: 
-				logging.error('Invalid action name: ', action_name)
-				response = response(request, 404,'Action not found')
-
-		else:
-			logging.error('Request invalid', request)
-			response = response(request, 404, 'Invalid request')
-			
-		str_res = json.dumps(response)
-		client.send(str_res.encode())
+		if requests:
+			bytes_request = requests.pop()
+			bytes_response = handle_default_request(bytes_request)
+			for write_client in wlist:
+				write_client.send(bytes_response)
 
 
 except KeyboardInterrupt:
